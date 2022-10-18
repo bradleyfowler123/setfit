@@ -7,6 +7,7 @@ from datasets import DatasetDict
 from sentence_transformers import InputExample, losses
 from sentence_transformers.datasets import SentenceLabelDataset
 from sentence_transformers.losses.BatchHardTripletLoss import BatchHardTripletLossDistanceFunction
+from sentence_transformers.evaluation import SentenceEvaluator
 from torch.utils.data import DataLoader
 from tqdm.auto import trange
 from transformers.trainer_utils import HPSearchBackend, default_compute_objective, number_of_arguments, set_seed
@@ -25,6 +26,11 @@ if TYPE_CHECKING:
 
 logging.set_verbosity_info()
 logger = logging.get_logger(__name__)
+
+
+class EmptySentenceEvaluator(SentenceEvaluator):
+    def __call__(self, model, output_path: str = None, epoch: int = -1, steps: int = -1) -> float:
+        return 0
 
 
 class SetFitTrainer:
@@ -288,6 +294,7 @@ class SetFitTrainer:
         max_length: Optional[int] = None,
         trial: Optional[Union["optuna.Trial", Dict[str, Any]]] = None,
         show_progress_bar: bool = True,
+        callback: Optional[Callable] = None
     ):
         """
         Main training entry point.
@@ -315,6 +322,10 @@ class SetFitTrainer:
                 The trial run or the hyperparameter dictionary for hyperparameter search.
             show_progress_bar (`bool`, *optional*, defaults to `True`):
                 Whether to show a bar that indicates training progress.
+            callback (Optional[Callable]):
+                Callback function that is invoked after each evaluation.
+                It must accept the following four parameters in this order:
+                `stage`, `score`, `epoch`, `steps`
         """
         set_seed(self.seed)  # Seed must be set before instantiating the model when using model_init.
 
@@ -392,6 +403,9 @@ class SetFitTrainer:
             logger.info(f"  Total train batch size = {batch_size}")
 
             warmup_steps = math.ceil(total_train_steps * self.warmup_proportion)
+            body_callback = callback
+            if body_callback:
+                body_callback = lambda score, epoch, steps: callback("body", score, epoch, steps)
             self.model.model_body.fit(
                 train_objectives=[(train_dataloader, train_loss)],
                 epochs=num_epochs,
@@ -399,6 +413,9 @@ class SetFitTrainer:
                 warmup_steps=warmup_steps,
                 show_progress_bar=show_progress_bar,
                 use_amp=self.use_amp,
+                evaluator=EmptySentenceEvaluator(),
+                callback=body_callback,
+                evaluation_steps=1,
             )
 
         if not self.model.has_differentiable_head or not self._freeze:
