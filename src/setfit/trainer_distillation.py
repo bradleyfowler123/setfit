@@ -214,14 +214,14 @@ class DistillationSetFitTrainer(SetFitTrainer):
                 train_dataloader = DataLoader(train_examples, shuffle=True, batch_size=batch_size)
                 train_loss = self.loss_class(self.student_model.model_body)
 
-            total_train_steps = len(train_dataloader) * num_epochs
+            self.total_train_steps = len(train_dataloader) * num_epochs
             logger.info("***** Running training *****")
             logger.info(f"  Num examples = {len(train_examples)}")
             logger.info(f"  Num epochs = {num_epochs}")
-            logger.info(f"  Total optimization steps = {total_train_steps}")
+            logger.info(f"  Total optimization steps = {self.total_train_steps}")
             logger.info(f"  Total train batch size = {batch_size}")
 
-            warmup_steps = math.ceil(total_train_steps * self.warmup_proportion)
+            warmup_steps = math.ceil(self.total_train_steps * self.warmup_proportion)
             self.student_model.model_body.fit(
                 train_objectives=[(train_dataloader, train_loss)],
                 epochs=num_epochs,
